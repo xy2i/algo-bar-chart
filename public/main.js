@@ -1,7 +1,7 @@
-const n = 12; // Amount of shown bars.
+const n = 20; // Amount of shown bars.
 const k = 10; // Interpolation.
 const formatNumber = d3.format(",d"); // Num format used in the bars.
-const duration = 250;
+const duration = 150;
 
 const margin = {
   left: 140,
