@@ -1,4 +1,4 @@
-const n = 20; // Amount of shown bars.
+const n = 15; // Amount of shown bars.
 const k = 10; // Interpolation.
 const formatNumber = d3.format(",d"); // Num format used in the bars.
 const duration = 150;
@@ -111,6 +111,14 @@ async function processData() {
       ]);
     }
   }
+  keyframes.push([
+    new Date(kb),
+    rank((team) => [
+      b.get(team) ? b.get(team)[0] : 0,
+      b.get(team) ? b.get(team)[1] : 0,
+    ]),
+  ]);
+
   const nameframes = d3.groups(
     keyframes.flatMap(([, data]) => data),
     (d) => d.name
