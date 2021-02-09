@@ -1,4 +1,4 @@
-const n = 15; // Amount of shown bars.
+let n;
 const k = 10; // Interpolation.
 const formatNumber = d3.format(",d"); // Num format used in the bars.
 const duration = 150;
@@ -9,7 +9,7 @@ const margin = {
   right: 10,
   bottom: 20,
 };
-const width = window.innerWidth;
+const width = window.innerWidth - 20;
 
 const colorFn = (data) => {
   const scale = d3.scaleOrdinal(["lightgrey", "#ffcc00", "green", "#002060"]);
@@ -73,6 +73,7 @@ async function processData() {
     .map(([date, data]) => [new Date(date), data])
     .sort(([a], [b]) => d3.ascending(a, b));
 
+  n = datevalues[datevalues.length - 1][1].size;
   function rank(value) {
     const data = Array.from(teams, (team) => ({
       name: team,
@@ -138,7 +139,7 @@ async function processData() {
   };
 }
 
-async function main() {
+async function getVisObject() {
   const locale = await d3.json("fr-FR.json");
   d3.timeFormatDefaultLocale(locale);
   const formatDate = d3.utcFormat("%B %d, %Y");
@@ -153,6 +154,7 @@ async function main() {
   } = await processData();
 
   const svg = d3.select("svg");
+  console.log("data", data);
   const barSize = 48;
   const height = margin.top + barSize * n + margin.bottom;
 
@@ -293,11 +295,11 @@ async function main() {
   function ticker(svg) {
     const now = svg
       .append("text")
-      .style("font", `bold ${barSize}px 'Inter'`)
-      .style("font-variant-numeric", "tabular-nums")
+      .attr("class", "date")
+      .style("font-size", `${barSize}px`)
       .attr("text-anchor", "end")
-      .attr("x", width - 6)
-      .attr("y", margin.top + barSize * (n - 0.45))
+      .attr("x", width - margin.right)
+      .attr("y", margin.top + barSize * 0.5)
       .attr("dy", "0.32em")
       .text(formatDate(keyframes[0][0]));
 
@@ -308,22 +310,144 @@ async function main() {
 
   const updateBars = bars(svg);
   const updateAxis = axis(svg);
-  const updateLabels = labels(svg);
   const updateTicker = ticker(svg);
+  const updateLabels = labels(svg);
 
+  return [
+    keyframes,
+    formatDate,
+    Object.assign(svg.node(), {
+      update(keyframe) {
+        const transition = svg
+          .transition()
+          .duration(duration)
+          .ease(d3.easeLinear);
+
+        // Extract the max value from all bars.
+        x.domain([0, d3.max(keyframe[1].map((d) => d.value[1]))]);
+
+        updateAxis(keyframe, transition);
+        updateBars(keyframe, transition);
+        updateLabels(keyframe, transition);
+        updateTicker(keyframe, transition);
+      },
+    }),
+  ];
   for (const keyframe of keyframes) {
-    const transition = svg.transition().duration(duration).ease(d3.easeLinear);
-
-    // Extract the max value from all bars.
-    x.domain([0, d3.max(keyframe[1].map((d) => d.value[1]))]);
-
-    updateAxis(keyframe, transition);
-    updateBars(keyframe, transition);
-    updateLabels(keyframe, transition);
-    updateTicker(keyframe, transition);
-
     await transition.end();
   }
 }
+function Scrubber(
+  values,
+  {
+    format = (value) => value,
+    initial = 0,
+    delay = null,
+    autoplay = true,
+    loop = true,
+    loopDelay = null,
+    alternate = false,
+  } = {}
+) {
+  values = Array.from(values);
+  document.querySelector(".control").innerHTML = `<form
+    style="font: 12px var(--sans-serif); font-variant-numeric: tabular-nums; display: flex; height: 33px; align-items: center;"
+  >
+    <button
+      name="b"
+      type="button"
+      style="margin-right: 0.4em; width: 5em;"
+    ></button>
+    <label style="display: flex; align-items: center;">
+      <input
+        name="i"
+        type="range"
+        min="0"
+        max=${values.length - 1}
+        value=${initial}
+        step="1"
+        style="width: 600px;"
+      />
+      <output name="o" style="margin-left: 0.4em;"></output>
+    </label>
+  </form>`;
+  const form = document.querySelector(".control form");
+  let frame = null;
+  let timer = null;
+  let interval = null;
+  let direction = 1;
+  console.log("form", form);
+  function start() {
+    form.b.textContent = "⏸️";
+    if (delay === null) frame = requestAnimationFrame(tick);
+    else interval = setInterval(tick, delay);
+  }
+  function stop() {
+    form.b.textContent = "▶️";
+    if (frame !== null) cancelAnimationFrame(frame), (frame = null);
+    if (timer !== null) clearTimeout(timer), (timer = null);
+    if (interval !== null) clearInterval(interval), (interval = null);
+  }
+  function running() {
+    return frame !== null || timer !== null || interval !== null;
+  }
+  function tick() {
+    if (
+      form.i.valueAsNumber ===
+      (direction > 0 ? values.length - 1 : direction < 0 ? 0 : NaN)
+    ) {
+      if (!loop) return stop();
+      if (alternate) direction = -direction;
+      if (loopDelay !== null) {
+        if (frame !== null) cancelAnimationFrame(frame), (frame = null);
+        if (interval !== null) clearInterval(interval), (interval = null);
+        timer = setTimeout(() => (step(), start()), loopDelay);
+        return;
+      }
+    }
+    if (delay === null) frame = requestAnimationFrame(tick);
+    step();
+  }
+  function step() {
+    form.i.valueAsNumber =
+      (form.i.valueAsNumber + direction + values.length) % values.length;
+    form.i.dispatchEvent(new CustomEvent("input", { bubbles: true }));
+  }
+  form.i.oninput = (event) => {
+    if (event && event.isTrusted && running()) stop();
+    form.value = values[form.i.valueAsNumber];
+    form.o.value = format(form.value, form.i.valueAsNumber, values);
+  };
+  form.b.onclick = () => {
+    if (running()) return stop();
+    direction =
+      alternate && form.i.valueAsNumber === values.length - 1 ? -1 : 1;
+    form.i.valueAsNumber = (form.i.valueAsNumber + direction) % values.length;
+    form.i.dispatchEvent(new CustomEvent("input", { bubbles: true }));
+    start();
+  };
+  form.i.oninput();
+  if (autoplay) start();
+  else stop();
+  return form;
+}
+
+async function main() {
+  const [keyframes, formatDate, viz] = await getVisObject();
+  let currentKeyframe;
+  console.log("keyframes", keyframes);
+  const form = Scrubber(keyframes, {
+    format: ([date]) => formatDate(date),
+    delay: duration,
+    loop: false,
+  });
+  d3.select(form).on("input", (e) => {
+    const keyframeIndex = e.target.value;
+    currentKeyframe = keyframes[keyframeIndex];
+    viz.update(currentKeyframe);
+  });
+}
 
 window.addEventListener("DOMContentLoaded", main);
+
+//

@@ -7,3 +7,12 @@
 html {
   font-family: Inter;
 }
+
+svg .date {
+  fill: grey;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+svg text {
+  font-weight: 600;
+}
